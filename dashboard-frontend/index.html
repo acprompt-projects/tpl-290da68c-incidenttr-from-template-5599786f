@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Incident Triage Dashboard</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:Inter,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.app{max-width:1200px;margin:0 auto;padding:24px}h1{font-size:1.5rem;margin-bottom:16px;color:#f8fafc}
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.filters button{padding:6px 14px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;cursor:pointer;font-size:.85rem}
+.filters button.active{color:#fff;border-color:transparent}button.sev-critical.active{background:#dc2626}button.sev-high.active{background:#ea580c}
+button.sev-medium.active{background:#ca8a04}button.sev-low.active{background:#16a34a}button.st-open.active{background:#2563eb}
+button.st-triaged.active{background:#7c3aed}button.st-resolved.active{background:#475569}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}
+th{text-align:left;padding:10px 14px;background:#0f172a;font-size:.8rem;text-transform:uppercase;color:#94a3b8;letter-spacing:.05em}
+td{padding:10px 14px;border-top:1px solid #334155;font-size:.875rem;cursor:pointer}
+tr:hover td{background:#334155}.badge{display:inline-block;padding:2px 10px;border-radius:9999px;font-size:.75rem;font-weight:600}
+.badge-critical{background:#dc2626;color:#fff}.badge-high{background:#ea580c;color:#fff}.badge-medium{background:#ca8a04;color:#fff}
+.badge-low{background:#16a34a;color:#fff}.badge-open{background:#2563eb;color:#fff}.badge-triaged{background:#7c3aed;color:#fff}
+.badge-resolved{background:#475569;color:#fff}
+.detail{margin-top:16px;background:#1e293b;border-radius:8px;padding:20px}
+.detail h2{font-size:1.15rem;margin-bottom:12px}.detail .row{display:flex;gap:24px;margin-bottom:8px;font-size:.9rem}
+.detail .label{color:#94a3b8;min-width:100px}.actions{margin-top:12px;display:flex;gap:8px}
+.actions button{padding:8px 18px;border-radius:6px;border:none;color:#fff;cursor:pointer;font-size:.85rem;font-weight:600}
+.btn-triage{background:#7c3aed}.btn-resolve{background:#16a34a}.btn-escalate{background:#dc2626}
+.empty{padding:40px;text-align:center;color:#64748b}
+</style>
+</head>
+<body><div id="root"></div>
+<script type="text/babel">
+const API = (window.__API_BASE__ || "http://localhost:8000") + "/api/incidents";
+const SEVS = ["all","critical","high","medium","low"], STS = ["all","open","triaged","resolved"];
+const MOCK = [
+  {id:"INC-001",title:"Database connection pool exhaustion",severity:"critical",status:"open",source:"rule-engine",service:"user-db",count:47,created_at:"2025-01-15T08:23:00Z",description:"PostgreSQL connection pool at 100% capacity. Multiple services reporting timeout errors.",assignee:null},
+  {id:"INC-002",title:"Elevated 5xx errors on payment gateway",severity:"high",status:"triaged",source:"rule-engine",service:"payment-svc",count:12,created_at:"2025-01-15T09:10:00Z",description:"Payment gateway returning 5xx at 8% rate, up from baseline 0.1%.",assignee:"oncall-payments"},
+  {id:"INC-003",title:"Kafka consumer lag spike",severity:"medium",status:"open",source:"rule-engine",service:"event-processor",count:3,created_at:"2025-01-15T10:05:00Z",description:"Consumer group lag exceeded 50k messages.",assignee:null},
+  {id:"INC-004",title:"Disk usage above 80% on logging cluster",severity:"low",status:"resolved",source:"rule-engine",service:"elastic-logs",count:1,created_at:"2025-01-14T22:00:00Z",description:"Log storage disk reached 82%. Resolved by expanding volume.",assignee:"sre-team"},
+  {id:"INC-005",title:"Memory leak in auth service",severity:"high",status:"open",source:"rule-engine",service:"auth-svc",count:8,created_at:"2025-01-15T11:30:00Z",description:"Auth service RSS growing 200MB/hr. OOM kills observed.",assignee:null},
+  {id:"INC-006",title:"SSL certificate expiring in 48h",severity:"critical",status:"triaged",source:"rule-engine",service:"api-gateway",count:1,created_at:"2025-01-15T07:00:00Z",description:"TLS cert for api.example.com expires Jan 17.",assignee:"security-oncall"},
+];
+function useIncidents(){
+  const [incidents,setIncidents]=React.useState(MOCK);
+  const [loading,setLoading]=React.useState(true);
+  React.useEffect(()=>{
+    fetch(API).then(r=>r.json()).then(d=>{setIncidents(d.incidents||d);setLoading(false)}).catch(()=>setLoading(false));
+  },[]);
+  const update=(id,patch)=>setIncidents(prev=>prev.map(i=>i.id===id?{...i,...patch}:i));
+  return {incidents,loading,update};
+}
+function IncidentTable({incidents,onSelect,selectedId}){
+  if(!incidents.length) return <div className="empty">No incidents match current filters</div>;
+  return <table><thead><tr><th>ID</th><th>Severity</th><th>Status</th><th>Service</th><th>Title</th><th>Count</th><th>Time</th></tr></thead>
+  <tbody>{incidents.map(i=><tr key={i.id} onClick={()=>onSelect(i)} style={i.id===selectedId?{background:"#334155"}:{}}>
+    <td style={{fontFamily:"monospace"}}>{i.id}</td>
+    <td><span className={`badge badge-${i.severity}`}>{i.severity}</span></td>
+    <td><span className={`badge badge-${i.status}`}>{i.status}</span></td>
+    <td>{i.service}</td><td>{i.title}</td><td>{i.count}</td>
+    <td>{new Date(i.created_at).toLocaleTimeString()}</td>
+  </tr>)}</tbody></table>;
+}
+function Detail({incident,onUpdate}){
+  if(!incident) return <div className="detail empty">Select an incident to view details</div>;
+  const triage=()=>onUpdate(incident.id,{status:"triaged",assignee:"current-user"});
+  const resolve=()=>onUpdate(incident.id,{status:"resolved"});
+  return <div className="detail">
+    <h2>{incident.id}: {incident.title}</h2>
+    <div className="row"><span className="label">Severity:</span><span className={`badge badge-${incident.severity}`}>{incident.severity}</span></div>
+    <div className="row"><span className="label">Status:</span><span className={`badge badge-${incident.status}`}>{incident.status}</span></div>
+    <div className="row"><span className="label">Service:</span>{incident.service}</div>
+    <div className="row"><span className="label">Source:</span>{incident.source}</div>
+    <div className="row"><span className="label">Count:</span>{incident.count}</div>
+    <div className="row"><span className="label">Assignee:</span>{incident.assignee||"Unassigned"}</div>
+    <div className="row"><span className="label">Created:</span>{new Date(incident.created_at).toLocaleString()}</div>
+    <div className="row"><span className="label">Description:</span>{incident.description}</div>
+    <div className="actions">
+      {incident.status==="open"&&<button className="btn-triage" onClick={triage}>Triage</button>}
+      {incident.status!=="resolved"&&<button className="btn-resolve" onClick={resolve}>Resolve</button>}
+      {incident.severity==="critical"&&<button className="btn-escalate" onClick={()=>alert("Escalated to PagerDuty!")}>Escalate</button>}
+    </div>
+  </div>;
+}
+function App(){
+  const {incidents,loading,update}=useIncidents();
+  const [sev,setSev]=React.useState("all"),[st,setSt]=React.useState("all"),[sel,setSel]=React.useState(null);
+  const filtered=incidents.filter(i=>(sev==="all"||i.severity===sev)&&(st==="all"||i.status===st));
+  const selected=sel?incidents.find(i=>i.id===sel):null;
+  return <div className="app"><h1>Incident Triage Dashboard</h1>
+    <div className="filters">
+      {SEVS.map(s=><button key={s} className={`sev-${s} ${sev===s?"active":""}`} onClick={()=>setSev(s)}>{s==="all"?"All Severity":s}</button>)}
+      <span style={{margin:"0 8px"}}/>
+      {STS.map(s=><button key={s} className={`st-${s} ${st===s?"active":""}`} onClick={()=>setSt(s)}>{s==="all"?"All Status":s}</button>)}
+    </div>
+    {loading?<div className="empty">Loading...</div>:<IncidentTable incidents={filtered} onSelect={i=>setSel(i.id)} selectedId={sel}/>}
+    <Detail incident={selected} onUpdate={update}/>
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script></body></html>
